@@ -1,152 +1,119 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.data import WEATHER_DATA, FORECAST_DATA, ALERT_DATA
+from app.providers.mock_llm import MockLLMProvider, SUPPORTED_LANGUAGES
 from app.schemas import (
-    WeatherResponse,
+    AlertsResponse,
+    ChatRequest,
+    ChatResponse,
     ForecastResponse,
-    AlertsResponse
+    WeatherResponse,
 )
+from app.services.chat_service import generate_chat_response
+from app.services.weather_service import (
+    LocationNotFoundError,
+    get_forecast,
+    get_weather,
+)
+from app.data import ALERT_DATA
 
-
-# -----------------------------------
-# Create the FastAPI application
-# -----------------------------------
 
 app = FastAPI(
     title="WeatherGPT Backend",
-    description="Backend for WeatherGPT weather, forecast and alert services.",
-    version="1.0.0"
+    description="Backend for WeatherGPT weather, forecast, alert and chat services.",
+    version="1.0.0",
 )
 
-
-# -----------------------------------
-# CORS
-# -----------------------------------
-# This allows our future React frontend,
-# running on localhost:5173, to communicate
-# with this backend.
-
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+mock_llm_provider = MockLLMProvider()
 
-# -----------------------------------
-# Home route
-# -----------------------------------
 
 @app.get("/")
 def home():
-    return {
-        "message": "WeatherGPT backend is running"
-    }
+    return {"message": "WeatherGPT backend is running"}
 
-
-# -----------------------------------
-# Health check
-# -----------------------------------
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
 
-
-# -----------------------------------
-# Current Weather API
-# -----------------------------------
 
 @app.get("/api/weather", response_model=WeatherResponse)
-def get_weather(city: str):
-
-    # Check if the city exists in our mock data
-    if city not in WEATHER_DATA:
+def weather(city: str):
+    try:
+        return get_weather(city)
+    except LocationNotFoundError:
         raise HTTPException(
             status_code=404,
             detail={
                 "error": {
                     "code": "LOCATION_NOT_FOUND",
-                    "message": f"Weather data not found for {city}."
+                    "message": f"Weather data not found for {city}.",
                 }
-            }
+            },
         )
 
-    return WEATHER_DATA[city]
-
-
-# -----------------------------------
-# Forecast API
-# -----------------------------------
 
 @app.get("/api/forecast", response_model=ForecastResponse)
-def get_forecast(city: str):
-
-    # Check if the city exists
-    if city not in FORECAST_DATA:
+def forecast(city: str):
+    try:
+        return {"city": city, "forecast": get_forecast(city)}
+    except LocationNotFoundError:
         raise HTTPException(
             status_code=404,
             detail={
                 "error": {
                     "code": "LOCATION_NOT_FOUND",
-                    "message": f"Forecast data not found for {city}."
+                    "message": f"Forecast data not found for {city}.",
                 }
-            }
+            },
         )
 
-    return {
-        "city": city,
-        "forecast": FORECAST_DATA[city]
-    }
-
-
-# -----------------------------------
-# Weather Alerts API
-# -----------------------------------
 
 @app.get("/api/alerts", response_model=AlertsResponse)
-def get_alerts(city: str):
-
-    # If there are no alerts for the city,
-    # return an empty list.
-    if city not in ALERT_DATA:
-        return {
-            "city": city,
-            "alerts": []
-        }
-
-    return {
-        "city": city,
-        "alerts": ALERT_DATA[city]
-    }
+def alerts(city: str):
+    return {"city": city, "alerts": ALERT_DATA.get(city, [])}
 
 
-# -----------------------------------
-# Temporary Chat API
-# -----------------------------------
-# This is only a placeholder for now.
-# Your teammate will build the real
-# chatbot and LLM functionality later.
+@app.post("/api/chat", response_model=ChatResponse)
+def chat(request: ChatRequest):
+    if request.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "UNSUPPORTED_LANGUAGE",
+                    "message": (
+                        f"Language '{request.language}' is not supported. "
+                        f"Use one of: {', '.join(SUPPORTED_LANGUAGES)}."
+                    ),
+                }
+            },
+        )
 
-@app.post("/api/chat")
-def chat():
-
-    return {
-        "message": "Chat service will be implemented by the AI teammate.",
-        "location": "Raipur",
-        "language": "en",
-        "weather_context": {
-            "temperature": 28,
-            "condition": "Cloudy",
-            "rain_probability": 60
-        },
-        "sources": [
-            "mock_weather"
-        ]
-    }
-    
+    try:
+        return generate_chat_response(request, mock_llm_provider)
+    except LocationNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "LOCATION_NOT_FOUND",
+                    "message": f"Weather data not found for {request.location.city}.",
+                }
+            },
+        )

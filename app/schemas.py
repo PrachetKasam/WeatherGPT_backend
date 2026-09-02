@@ -1,10 +1,7 @@
-from pydantic import BaseModel
 from typing import List
 
+from pydantic import BaseModel, Field
 
-# -------------------------
-# Current Weather
-# -------------------------
 
 class Coordinates(BaseModel):
     latitude: float
@@ -30,10 +27,6 @@ class WeatherResponse(BaseModel):
     updated_at: str
 
 
-# -------------------------
-# Forecast
-# -------------------------
-
 class ForecastDay(BaseModel):
     date: str
     temperature_high: float
@@ -46,10 +39,6 @@ class ForecastResponse(BaseModel):
     city: str
     forecast: List[ForecastDay]
 
-
-# -------------------------
-# Weather Alerts
-# -------------------------
 
 class Alert(BaseModel):
     id: str
@@ -65,10 +54,6 @@ class AlertsResponse(BaseModel):
     alerts: List[Alert]
 
 
-# -------------------------
-# Error Response
-# -------------------------
-
 class ErrorDetail(BaseModel):
     code: str
     message: str
@@ -76,3 +61,29 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorDetail
+
+
+class ChatLocation(BaseModel):
+    city: str = Field(min_length=1)
+    latitude: float
+    longitude: float
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1)
+    location: ChatLocation
+    language: str = Field(min_length=2, max_length=2)
+
+
+class WeatherContext(BaseModel):
+    temperature: float
+    condition: str
+    rain_probability: float
+
+
+class ChatResponse(BaseModel):
+    message: str
+    location: str
+    language: str
+    weather_context: WeatherContext
+    sources: List[str]
